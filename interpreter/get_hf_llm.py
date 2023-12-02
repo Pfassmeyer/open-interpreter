@@ -352,10 +352,7 @@ def format_quality_choice(model, name_override = None) -> str:
     """
     Formats the model choice for display in the inquirer prompt.
     """
-    if name_override:
-        name = name_override
-    else:
-        name = model['filename']
+    name = name_override if name_override else model['filename']
     return f"{name} | Size: {model['Size']:.1f} GB, Estimated RAM usage: {model['RAM']:.1f} GB"
 
 def enough_disk_space(size, path) -> bool:
@@ -369,7 +366,4 @@ def enough_disk_space(size, path) -> bool:
     # Convert bytes to gigabytes
     free_gb = free / (2**30) 
 
-    if free_gb > size:
-        return True
-
-    return False
+    return free_gb > size

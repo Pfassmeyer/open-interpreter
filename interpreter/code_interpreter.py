@@ -37,45 +37,42 @@ def run_html(html_content):
         f.write(html_content.encode())
 
     # Open the HTML file with the default web browser
-    webbrowser.open('file://' + os.path.realpath(f.name))
+    webbrowser.open(f'file://{os.path.realpath(f.name)}')
 
     return f"Saved to {os.path.realpath(f.name)} and opened with the user's default web browser."
 
 
 # Mapping of languages to their start, run, and print commands
 language_map = {
-  "python": {
-    # Python is run from this interpreter with sys.executable
-    # in interactive, quiet, and unbuffered mode
-    "start_cmd": sys.executable + " -i -q -u",
-    "print_cmd": 'print("{}")'
-  },
-  "R": {
-    # R is run from this interpreter with R executable
-    # in interactive, quiet, and unbuffered mode
-    "start_cmd": "R -q --vanilla",
-    "print_cmd": 'print("{}")'
-  },
-  "shell": {
-    # On Windows, the shell start command is `cmd.exe`
-    # On Unix, it should be the SHELL environment variable (defaults to 'bash' if not set)
-    "start_cmd": 'cmd.exe' if platform.system() == 'Windows' else os.environ.get('SHELL', 'bash'),
-    "print_cmd": 'echo "{}"'
-  },
-  "javascript": {
-    "start_cmd": "node -i",
-    "print_cmd": 'console.log("{}")'
-  },
-  "applescript": {
-    # Starts from shell, whatever the user's preference (defaults to '/bin/zsh')
-    # (We'll prepend "osascript -e" every time, not once at the start, so we want an empty shell)
-    "start_cmd": os.environ.get('SHELL', '/bin/zsh'),
-    "print_cmd": 'log "{}"'
-  },
-  "html": {
-    "open_subprocess": False,
-    "run_function": run_html,
-  }
+    "python": {
+        "start_cmd": f"{sys.executable} -i -q -u",
+        "print_cmd": 'print("{}")',
+    },
+    "R": {
+        # R is run from this interpreter with R executable
+        # in interactive, quiet, and unbuffered mode
+        "start_cmd": "R -q --vanilla",
+        "print_cmd": 'print("{}")',
+    },
+    "shell": {
+        # On Windows, the shell start command is `cmd.exe`
+        # On Unix, it should be the SHELL environment variable (defaults to 'bash' if not set)
+        "start_cmd": 'cmd.exe'
+        if platform.system() == 'Windows'
+        else os.environ.get('SHELL', 'bash'),
+        "print_cmd": 'echo "{}"',
+    },
+    "javascript": {"start_cmd": "node -i", "print_cmd": 'console.log("{}")'},
+    "applescript": {
+        # Starts from shell, whatever the user's preference (defaults to '/bin/zsh')
+        # (We'll prepend "osascript -e" every time, not once at the start, so we want an empty shell)
+        "start_cmd": os.environ.get('SHELL', '/bin/zsh'),
+        "print_cmd": 'log "{}"',
+    },
+    "html": {
+        "open_subprocess": False,
+        "run_function": run_html,
+    },
 }
 
 # Get forbidden_commands (disabled)
@@ -132,15 +129,15 @@ class CodeInterpreter:
       self.active_block.refresh()
 
   def run(self):
-    """
+      """
     Executes code.
     """
 
-    # Get code to execute
-    self.code = self.active_block.code
+      # Get code to execute
+      self.code = self.active_block.code
 
-    # Check for forbidden commands (disabled)
-    """
+      # Check for forbidden commands (disabled)
+      """
     for line in self.code.split("\n"):
       if line in forbidden_commands:
         message = f"This code contains a forbidden command: {line}"
@@ -149,116 +146,116 @@ class CodeInterpreter:
         return message
     """
 
-    # Should we keep a subprocess open? True by default
-    open_subprocess = language_map[self.language].get("open_subprocess", True)
+      # Should we keep a subprocess open? True by default
+      open_subprocess = language_map[self.language].get("open_subprocess", True)
 
-    # Start the subprocess if it hasn't been started
-    if not self.proc and open_subprocess:
+      # Start the subprocess if it hasn't been started
+      if not self.proc and open_subprocess:
+        try:
+          self.start_process()
+        except:
+          # Sometimes start_process will fail!
+          # Like if they don't have `node` installed or something.
+
+          traceback_string = traceback.format_exc()
+          self.output = traceback_string
+          self.update_active_block()
+
+          # Before you return, wait for the display to catch up?
+          # (I'm not sure why this works)
+          time.sleep(0.1)
+
+          return self.output
+
+      # Reset output
+      self.output = ""
+
+      # Use the print_cmd for the selected language
+      self.print_cmd = language_map[self.language].get("print_cmd")
+      code = self.code
+
+      # Add print commands that tell us what the active line is
+      if self.print_cmd:
+        try:
+          code = self.add_active_line_prints(code)
+        except:
+          # If this failed, it means the code didn't compile
+          # This traceback will be our output.
+
+          traceback_string = traceback.format_exc()
+          self.output = traceback_string
+          self.update_active_block()
+
+          # Before you return, wait for the display to catch up?
+          # (I'm not sure why this works)
+          time.sleep(0.1)
+
+          return self.output
+
+      if self.language == "python":
+        # This lets us stop execution when error happens (which is not default -i behavior)
+        # And solves a bunch of indentation problems-- if everything's indented, -i treats it as one block
+        code = wrap_in_try_except(code)
+
+      # Remove any whitespace lines, as this will break indented blocks
+      # (are we sure about this? test this)
+      code_lines = code.split("\n")
+      code_lines = [c for c in code_lines if c.strip() != ""]
+      code = "\n".join(code_lines)
+
+      # Add end command (we'll be listening for this so we know when it ends)
+      if self.print_cmd and self.language != "applescript": # Applescript is special. Needs it to be a shell command because 'return' (very common) will actually return, halt script
+        code += "\n\n" + self.print_cmd.format('END_OF_EXECUTION')
+
+        # Applescript-specific processing
+      if self.language == "applescript":
+          # Escape double quotes
+          code = code.replace('"', r'\"')
+              # Wrap in double quotes
+          code = f'"{code}"'
+              # Prepend start command
+          code = f"osascript -e {code}"
+          # Append end command
+          code += '\necho "END_OF_EXECUTION"'
+
+      # Debug
+      if self.debug_mode:
+        print("Running code:")
+        print(code)
+        print("---")
+
+      # HTML-specific processing (and running)
+      if self.language == "html":
+        output = language_map["html"]["run_function"](code)
+        return output
+
+      # Reset self.done so we can .wait() for it
+      self.done = threading.Event()
+      self.done.clear()
+
+      # Write code to stdin of the process
       try:
+        self.proc.stdin.write(code + "\n")
+        self.proc.stdin.flush()
+      except BrokenPipeError:
+        # It can just.. break sometimes? Let's fix this better in the future
+        # For now, just try again
         self.start_process()
-      except:
-        # Sometimes start_process will fail!
-        # Like if they don't have `node` installed or something.
+        self.run()
+        return
 
-        traceback_string = traceback.format_exc()
-        self.output = traceback_string
-        self.update_active_block()
+      # Wait until execution completes
+      self.done.wait()
 
-        # Before you return, wait for the display to catch up?
-        # (I'm not sure why this works)
-        time.sleep(0.1)
+      # Before you return, wait for the display to catch up?
+      # (I'm not sure why this works)
+      time.sleep(0.1)
 
-        return self.output
-
-    # Reset output
-    self.output = ""
-
-    # Use the print_cmd for the selected language
-    self.print_cmd = language_map[self.language].get("print_cmd")
-    code = self.code
-
-    # Add print commands that tell us what the active line is
-    if self.print_cmd:
-      try:
-        code = self.add_active_line_prints(code)
-      except:
-        # If this failed, it means the code didn't compile
-        # This traceback will be our output.
-
-        traceback_string = traceback.format_exc()
-        self.output = traceback_string
-        self.update_active_block()
-
-        # Before you return, wait for the display to catch up?
-        # (I'm not sure why this works)
-        time.sleep(0.1)
-
-        return self.output
-
-    if self.language == "python":
-      # This lets us stop execution when error happens (which is not default -i behavior)
-      # And solves a bunch of indentation problems-- if everything's indented, -i treats it as one block
-      code = wrap_in_try_except(code)
-
-    # Remove any whitespace lines, as this will break indented blocks
-    # (are we sure about this? test this)
-    code_lines = code.split("\n")
-    code_lines = [c for c in code_lines if c.strip() != ""]
-    code = "\n".join(code_lines)
-
-    # Add end command (we'll be listening for this so we know when it ends)
-    if self.print_cmd and self.language != "applescript": # Applescript is special. Needs it to be a shell command because 'return' (very common) will actually return, halt script
-      code += "\n\n" + self.print_cmd.format('END_OF_EXECUTION')
-
-    # Applescript-specific processing
-    if self.language == "applescript":
-      # Escape double quotes
-      code = code.replace('"', r'\"')
-      # Wrap in double quotes
-      code = '"' + code + '"'
-      # Prepend start command
-      code = "osascript -e " + code
-      # Append end command
-      code += '\necho "END_OF_EXECUTION"'
-
-    # Debug
-    if self.debug_mode:
-      print("Running code:")
-      print(code)
-      print("---")
-
-    # HTML-specific processing (and running)
-    if self.language == "html":
-      output = language_map["html"]["run_function"](code)
-      return output
-
-    # Reset self.done so we can .wait() for it
-    self.done = threading.Event()
-    self.done.clear()
-
-    # Write code to stdin of the process
-    try:
-      self.proc.stdin.write(code + "\n")
-      self.proc.stdin.flush()
-    except BrokenPipeError:
-      # It can just.. break sometimes? Let's fix this better in the future
-      # For now, just try again
-      self.start_process()
-      self.run()
-      return
-
-    # Wait until execution completes
-    self.done.wait()
-
-    # Before you return, wait for the display to catch up?
-    # (I'm not sure why this works)
-    time.sleep(0.1)
-
-    # Return code output
-    return self.output
+      # Return code output
+      return self.output
 
   def add_active_line_prints(self, code):
-    """
+      """
     This function takes a code snippet and adds print statements before each line,
     indicating the active line number during execution. The print statements respect
     the indentation of the original code, using the indentation of the next non-blank line.
@@ -270,56 +267,51 @@ class CodeInterpreter:
     3) It really struggles with multiline stuff, so I've disabled that (but we really should fix and restore).
     """
 
-    # Doesn't work on Windows
-    if platform.system() == 'Windows':
-       return code
-    
-    # Doesn't work with R
-    if self.language == 'R':
-       return code
+      # Doesn't work on Windows
+      if platform.system() == 'Windows':
+         return code
 
-    if self.language == "python":
-      return add_active_line_prints_to_python(code)
+      # Doesn't work with R
+      if self.language == 'R':
+         return code
 
-    # Split the original code into lines
-    code_lines = code.strip().split('\n')
+      if self.language == "python":
+        return add_active_line_prints_to_python(code)
 
-    # If it's shell, check for breaking cases
-    if self.language == "shell":
-      if len(code_lines) > 1:
-        return code
-      if "for" in code or "do" in code or "done" in code:
-        return code
-      for line in code_lines:
-        if line.startswith(" "):
+      # Split the original code into lines
+      code_lines = code.strip().split('\n')
+
+      # If it's shell, check for breaking cases
+      if self.language == "shell":
+        if len(code_lines) > 1:
           return code
+        if "for" in code or "do" in code or "done" in code:
+          return code
+        for line in code_lines:
+          if line.startswith(" "):
+            return code
 
-    # Initialize an empty list to hold the modified lines of code
-    modified_code_lines = []
+      # Initialize an empty list to hold the modified lines of code
+      modified_code_lines = []
 
-    # Iterate over each line in the original code
-    for i, line in enumerate(code_lines):
-      # Initialize a variable to hold the leading whitespace of the next non-empty line
-      leading_whitespace = ""
+        # Iterate over each line in the original code
+      for i, line in enumerate(code_lines):
+          leading_whitespace = next(
+              (
+                  next_line[: len(next_line) - len(next_line.lstrip())]
+                  for next_line in code_lines[i:]
+                  if next_line.strip()
+              ),
+              "",
+          )
+          # Format the print command with the current line number, using the found leading whitespace
+          print_line = self.print_cmd.format(f"ACTIVE_LINE:{i+1}")
+          print_line = leading_whitespace + print_line
 
-      # Iterate over the remaining lines to find the leading whitespace of the next non-empty line
-      for next_line in code_lines[i:]:
-        if next_line.strip():
-          leading_whitespace = next_line[:len(next_line) -
-                                         len(next_line.lstrip())]
-          break
-
-      # Format the print command with the current line number, using the found leading whitespace
-      print_line = self.print_cmd.format(f"ACTIVE_LINE:{i+1}")
-      print_line = leading_whitespace + print_line
-
-      # Add the print command and the original line to the modified lines
-      modified_code_lines.append(print_line)
-      modified_code_lines.append(line)
-
-    # Join the modified lines with newlines and return the result
-    code = "\n".join(modified_code_lines)
-    return code
+          modified_code_lines.extend((print_line, line))
+      # Join the modified lines with newlines and return the result
+      code = "\n".join(modified_code_lines)
+      return code
 
   def save_and_display_stream(self, stream, is_error_stream):
     # Handle each line of output
