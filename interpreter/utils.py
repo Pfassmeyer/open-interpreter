@@ -8,16 +8,17 @@ def merge_deltas(original, delta):
     Great for reconstructing OpenAI streaming responses -> complete message objects.
     """
     for key, value in delta.items():
-        if isinstance(value, dict):
-            if key not in original:
-                original[key] = value
-            else:
-                merge_deltas(original[key], value)
+        if (
+            isinstance(value, dict)
+            and key not in original
+            or not isinstance(value, dict)
+            and key not in original
+        ):
+            original[key] = value
+        elif isinstance(value, dict):
+            merge_deltas(original[key], value)
         else:
-            if key in original:
-                original[key] += value
-            else:
-                original[key] = value
+            original[key] += value
     return original
 
 def parse_partial_json(s):
@@ -27,7 +28,7 @@ def parse_partial_json(s):
         return json.loads(s)
     except json.JSONDecodeError:
         pass
-  
+
     # Initialize variables.
     new_s = ""
     stack = []
@@ -45,21 +46,20 @@ def parse_partial_json(s):
                 escaped = not escaped
             else:
                 escaped = False
-        else:
-            if char == '"':
-                is_inside_string = True
-                escaped = False
-            elif char == '{':
-                stack.append('}')
-            elif char == '[':
-                stack.append(']')
-            elif char == '}' or char == ']':
-                if stack and stack[-1] == char:
-                    stack.pop()
-                else:
-                    # Mismatched closing character; the input is malformed.
-                    return None
-        
+        elif char == '"':
+            is_inside_string = True
+            escaped = False
+        elif char == '{':
+            stack.append('}')
+        elif char == '[':
+            stack.append(']')
+        elif char in ['}', ']']:
+            if stack and stack[-1] == char:
+                stack.pop()
+            else:
+                # Mismatched closing character; the input is malformed.
+                return None
+
         # Append the processed character to the new string.
         new_s += char
 

@@ -170,12 +170,9 @@ class Interpreter:
         # Since it's not stricly necessary, let's worry about that another day. Should probably log this somehow though.
         pass
 
-    elif self.local:
-
+    else:
       # Tell Code-Llama how to run code.
       info += "\n\nTo run code, write a fenced code block (i.e ```python, R or ```shell) in markdown. When you close it with ```, it will be run. You'll then be given its output."
-      # We make references in system_message.txt to the "function" it can call, "run_code".
-
     return info
 
   def reset(self):
@@ -216,8 +213,8 @@ class Interpreter:
       if 'content' in message and message['content'] != None:
         print(Markdown(f"**Removed message:** `\"{message['content'][:30]}...\"`"))
       elif 'function_call' in message:
-        print(Markdown(f"**Removed codeblock**")) # TODO: Could add preview of code removed here.
-    
+        print(Markdown("**Removed codeblock**"))
+
     print("") # Aesthetics.
 
   def handle_help(self, arguments):
@@ -235,9 +232,8 @@ class Interpreter:
     ]
 
     # Add each command and its description to the message
-    for cmd, desc in commands_description.items():
-      base_message.append(f"- `{cmd}`: {desc}\n")
-
+    base_message.extend(f"- `{cmd}`: {desc}\n"
+                        for cmd, desc in commands_description.items())
     additional_info = [
       "\n\nFor further assistance, please join our community Discord or consider contributing to the project's development."
     ]
@@ -249,15 +245,15 @@ class Interpreter:
 
 
   def handle_debug(self, arguments=None):
-    if arguments == "" or arguments == "true":
-        print(Markdown("> Entered debug mode"))
-        print(self.messages)
-        self.debug_mode = True
+    if arguments in ["", "true"]:
+      print(Markdown("> Entered debug mode"))
+      print(self.messages)
+      self.debug_mode = True
     elif arguments == "false":
         print(Markdown("> Exited debug mode"))
         self.debug_mode = False
     else:
-        print(Markdown("> Unknown argument to debug command."))
+      print(Markdown("> Unknown argument to debug command."))
 
   def handle_reset(self, arguments):
     self.reset()
@@ -312,16 +308,13 @@ class Interpreter:
       # gpt-4
       self.verify_api_key()
 
-    # ^ verify_api_key may set self.local to True, so we run this as an 'if', not 'elif':
     if self.local:
-
-      # Code-Llama
-      if self.llama_instance == None:
+      if self.llama_instance is None:
 
         # Find or install Code-Llama
         try:
           self.llama_instance = get_hf_llm(self.model, self.debug_mode, self.context_window)
-          if self.llama_instance == None:
+          if self.llama_instance is None:
             # They cancelled.
             return
         except:
@@ -348,7 +341,7 @@ class Interpreter:
     if self.debug_mode:
       welcome_message += "> Entered debug mode"
 
-      
+
 
     # If self.local, we actually don't use self.model
     # (self.auto_run is like advanced usage, we display no messages)
@@ -359,7 +352,7 @@ class Interpreter:
       else:
         notice_model = f"{self.model.upper()}"
       welcome_message += f"\n> Model set to `{notice_model}`\n\n**Tip:** To run locally, use `interpreter --local`"
-      
+
     if self.local:
       welcome_message += f"\n> Model set to `{self.model}`"
 
@@ -499,7 +492,7 @@ class Interpreter:
       litellm.api_version = self.azure_api_version
       litellm.api_key = self.api_key
     else:
-      if self.api_key == None:
+      if self.api_key is None:
         if 'OPENAI_API_KEY' in os.environ:
           self.api_key = os.environ['OPENAI_API_KEY']
         else:
@@ -591,42 +584,42 @@ class Interpreter:
     # Make LLM call
     if not self.local:
       # GPT
-      
+
       error = ""
-      
+
       for _ in range(3):  # 3 retries
         try:
 
-            if self.use_azure:
-              response = litellm.completion(
-                  f"azure/{self.azure_deployment_name}",
-                  messages=messages,
-                  functions=[function_schema],
-                  temperature=self.temperature,
-                  stream=True,
-                  )
-            else:
-              if self.api_base:
+          if self.use_azure:
+            response = litellm.completion(
+                f"azure/{self.azure_deployment_name}",
+                messages=messages,
+                functions=[function_schema],
+                temperature=self.temperature,
+                stream=True,
+                )
+          else:
+            if self.api_base:
                 # The user set the api_base. litellm needs this to be "custom/{model}"
-                response = litellm.completion(
+              response = litellm.completion(
                   api_base=self.api_base,
-                  model = "custom/" + self.model,
+                  model=f"custom/{self.model}",
                   messages=messages,
                   functions=[function_schema],
                   stream=True,
                   temperature=self.temperature,
-                )
-              else:
-                # Normal OpenAI call
-                response = litellm.completion(
-                  model=self.model,
-                  messages=messages,
-                  functions=[function_schema],
-                  stream=True,
-                  temperature=self.temperature,
-                )
+              )
+            else:
+              # Normal OpenAI call
+              response = litellm.completion(
+                model=self.model,
+                messages=messages,
+                functions=[function_schema],
+                stream=True,
+                temperature=self.temperature,
+              )
 
-            break
+          break
         except:
             if self.debug_mode:
               traceback.print_exc()
@@ -634,7 +627,7 @@ class Interpreter:
             time.sleep(3)
       else:
         raise Exception(error)
-            
+
     elif self.local:
       # Code-Llama
 
@@ -758,7 +751,7 @@ class Interpreter:
           # Print newline if it was just a code block or user message
           # (this just looks nice)
           last_role = self.messages[-2]["role"]
-          if last_role == "user" or last_role == "function":
+          if last_role in ["user", "function"]:
             print()
 
           # then create a new code block
@@ -837,7 +830,7 @@ class Interpreter:
         in_function_call = False
 
         # If there's no active block,
-        if self.active_block == None:
+        if self.active_block is None:
 
           # Create a message block
           self.active_block = MessageBlock()
